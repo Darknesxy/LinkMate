@@ -94,7 +94,7 @@ Double-click `run.bat` or run:
 ```bash
 python -m uvicorn backend.server:app --host 0.0.0.0 --port 8000
 ```
-Open **[http://localhost:8000](http://localhost:8000)** in your browser!
+Open **https://darknesxy.github.io/LinkMate/** in your browser!
 
 ---
 
