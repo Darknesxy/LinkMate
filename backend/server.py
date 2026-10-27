@@ -27,6 +27,7 @@ FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
 TEMP_DIR = Path(tempfile.gettempdir()) / "linkmate_downloads"
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
+DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 MOBILE_USER_AGENT = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
 
 # visionos client bypasses datacenter/cloud IP bot detection in modern yt-dlp
@@ -38,6 +39,25 @@ CLIENTS_LIST = [
     ['android'],
     []
 ]
+
+def get_cookie_file() -> Optional[str]:
+    # Check Render or server env var
+    yt_cookies_env = os.environ.get("YOUTUBE_COOKIES")
+    if yt_cookies_env and len(yt_cookies_env.strip()) > 20:
+        c_file = TEMP_DIR / "env_cookies.txt"
+        c_file.write_text(yt_cookies_env.strip(), encoding="utf-8")
+        return str(c_file)
+    
+    # Check backend/cookies.txt
+    backend_cookies = Path(__file__).parent / "cookies.txt"
+    if backend_cookies.exists() and backend_cookies.stat().st_size > 10:
+        return str(backend_cookies)
+        
+    root_cookies = Path(__file__).parent.parent / "cookies.txt"
+    if root_cookies.exists() and root_cookies.stat().st_size > 10:
+        return str(root_cookies)
+
+    return None
 
 def format_bytes(size: Optional[int]) -> str:
     if not size or size <= 0:
@@ -75,19 +95,27 @@ def sanitize_filename(name: str) -> str:
 
 @app.get("/api/health")
 def health():
+    cookie_file = get_cookie_file()
     return {
         "status": "ok",
         "ffmpeg": bool(FFMPEG_PATH),
-        "ffmpeg_path": FFMPEG_PATH
+        "ffmpeg_path": FFMPEG_PATH,
+        "cookies_configured": bool(cookie_file)
     }
 
 def extract_info_resilient(url: str, base_opts: dict) -> dict:
     last_err = None
     is_yt = 'youtube' in url or 'youtu.be' in url
+    cookie_file = get_cookie_file()
+
+    if cookie_file:
+        base_opts['cookiefile'] = cookie_file
 
     if not is_yt:
+        opts = dict(base_opts)
+        opts['http_headers'] = {'User-Agent': DEFAULT_USER_AGENT}
         try:
-            with yt_dlp.YoutubeDL(base_opts) as ydl:
+            with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
                 if info:
                     return info
@@ -101,7 +129,7 @@ def extract_info_resilient(url: str, base_opts: dict) -> dict:
         elif not clients and 'extractor_args' in opts:
             opts.pop('extractor_args', None)
 
-        opts['http_headers'] = {'User-Agent': MOBILE_USER_AGENT}
+        opts['http_headers'] = {'User-Agent': MOBILE_USER_AGENT if is_yt else DEFAULT_USER_AGENT}
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
@@ -293,7 +321,6 @@ def get_video_info(url: str = Query(...)):
         if "Unsupported URL" in error_msg:
             raise HTTPException(status_code=400, detail="This platform or URL is not supported. Please check the URL.")
         if "Private video" in error_msg or "Sign in" in error_msg:
-            # Resilient profile if YouTube flags IP
             return {
                 "title": f"Video: {url[:45]}...",
                 "thumbnail": "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&auto=format&fit=crop&q=80",
@@ -404,6 +431,9 @@ async def download_video(
         else:
             ydl_format = "bestvideo+bestaudio/best/bv*+ba/b"
 
+    cookie_file = get_cookie_file()
+    is_yt = 'youtube' in url or 'youtu.be' in url
+
     ydl_opts = {
         'format': ydl_format,
         'outtmpl': out_template,
@@ -411,9 +441,12 @@ async def download_video(
         'no_warnings': True,
         'ffmpeg_location': FFMPEG_PATH,
         'socket_timeout': 60,
-        'http_headers': {'User-Agent': MOBILE_USER_AGENT},
+        'http_headers': {'User-Agent': MOBILE_USER_AGENT if is_yt else DEFAULT_USER_AGENT},
         'merge_output_format': 'mp4',
     }
+    if cookie_file:
+        ydl_opts['cookiefile'] = cookie_file
+
     if postprocessors:
         ydl_opts['postprocessors'] = postprocessors
 
@@ -422,7 +455,6 @@ async def download_video(
 
         def execute_download():
             last_err = None
-            is_yt = 'youtube' in url or 'youtu.be' in url
 
             for clients in CLIENTS_LIST:
                 opts = dict(ydl_opts)
