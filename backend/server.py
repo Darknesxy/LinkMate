@@ -27,6 +27,17 @@ FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
 TEMP_DIR = Path(tempfile.gettempdir()) / "linkmate_downloads"
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
+DEFAULT_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+    'Accept-Language': 'en-US,en;q=0.9',
+}
+
+YOUTUBE_EXTRACTOR_ARGS = {
+    'youtube': {
+        'player_client': ['android', 'ios', 'mweb', 'web']
+    }
+}
+
 def format_bytes(size: Optional[int]) -> str:
     if not size or size <= 0:
         return "Unknown size"
@@ -75,7 +86,6 @@ def get_video_info(url: str = Query(...)):
     if not url:
         raise HTTPException(status_code=400, detail="Please enter a valid video link.")
 
-    # Validate url scheme
     if not (url.startswith("http://") or url.startswith("https://")):
         raise HTTPException(status_code=400, detail="URL must start with http:// or https://")
 
@@ -85,8 +95,9 @@ def get_video_info(url: str = Query(...)):
         'no_warnings': True,
         'extract_flat': False,
         'ffmpeg_location': FFMPEG_PATH,
-        'js_runtimes': {'node': {}},
-        'socket_timeout': 15,
+        'socket_timeout': 20,
+        'extractor_args': YOUTUBE_EXTRACTOR_ARGS,
+        'http_headers': DEFAULT_HEADERS,
     }
 
     try:
@@ -109,7 +120,6 @@ def get_video_info(url: str = Query(...)):
             video_only_opts = []
             seen_res = set()
 
-            # Inspect extracted formats
             for f in raw_formats:
                 vcodec = f.get('vcodec') or 'none'
                 acodec = f.get('acodec') or 'none'
@@ -162,7 +172,6 @@ def get_video_info(url: str = Query(...)):
                             "ext": "mp4",
                         })
 
-            # Sort descending by resolution number
             def parse_res(opt):
                 num = re.findall(r'\d+', opt.get('quality', ''))
                 return int(num[0]) if num else 0
@@ -171,8 +180,6 @@ def get_video_info(url: str = Query(...)):
             video_only_opts.sort(key=parse_res, reverse=True)
             audio_opts.sort(key=parse_res, reverse=True)
 
-            # If no single progressive stream is available (common on modern YouTube 1080p),
-            # synthesize high quality merged profiles that FFmpeg will merge on download:
             if not video_audio_opts:
                 video_audio_opts = [
                     {
@@ -217,7 +224,6 @@ def get_video_info(url: str = Query(...)):
                     }
                 ]
 
-            # Primary options for preview card: top video+audio, best audio, and video only
             selected_options = []
             if video_audio_opts:
                 selected_options.append(video_audio_opts[0])
@@ -245,7 +251,7 @@ def get_video_info(url: str = Query(...)):
         error_msg = str(e)
         if "Unsupported URL" in error_msg:
             raise HTTPException(status_code=400, detail="This platform or URL is not supported. Please check the URL.")
-        if "Private video" in error_msg or "Sign in" in error_msg:
+        if "Private video" in error_msg:
             raise HTTPException(status_code=403, detail="This video is private, age-restricted, or requires login.")
         raise HTTPException(status_code=400, detail=f"Failed to fetch video: {error_msg}")
 
@@ -269,14 +275,12 @@ async def download_video(
     if not url:
         raise HTTPException(status_code=400, detail="URL cannot be empty")
 
-    # Generate a unique temp file base
     import uuid
     req_uuid = uuid.uuid4().hex[:8]
     out_template = str(TEMP_DIR / f"{req_uuid}_%(title).40s.%(ext)s")
 
     postprocessors = []
 
-    # Configure extraction options according to format_type
     if format_type == "audio":
         audio_kbps = re.findall(r'\d+', bitrate)
         chosen_bitrate = audio_kbps[0] if audio_kbps else "320"
@@ -287,7 +291,6 @@ async def download_video(
         })
         ydl_format = 'bestaudio/best'
     else:
-        # If user picked specific quality like 1080p, 720p, 4K
         if quality and quality.lower() != 'auto':
             num = re.findall(r'\d+', quality)
             h = num[0] if num else None
@@ -307,8 +310,9 @@ async def download_video(
         'quiet': True,
         'no_warnings': True,
         'ffmpeg_location': FFMPEG_PATH,
-        'js_runtimes': {'node': {}},
-        'socket_timeout': 30,
+        'socket_timeout': 40,
+        'extractor_args': YOUTUBE_EXTRACTOR_ARGS,
+        'http_headers': DEFAULT_HEADERS,
         'merge_output_format': 'mp4',
     }
     if postprocessors:
@@ -323,13 +327,11 @@ async def download_video(
                 downloaded_file = ydl.prepare_filename(info)
                 title = info.get('title') or "video"
                 
-                # If audio postprocessor converted to mp3
                 if format_type == "audio":
                     expected_mp3 = Path(downloaded_file).with_suffix(".mp3")
                     if expected_mp3.exists():
                         return str(expected_mp3), title
                 
-                # If merged into mp4
                 expected_mp4 = Path(downloaded_file).with_suffix(".mp4")
                 if expected_mp4.exists():
                     return str(expected_mp4), title
@@ -339,7 +341,6 @@ async def download_video(
         filepath, title = await loop.run_in_executor(None, execute_download)
         file_path = Path(filepath)
 
-        # If exact filename doesn't match, look for file starting with req_uuid
         if not file_path.exists():
             matched = list(TEMP_DIR.glob(f"{req_uuid}_*"))
             if matched:
@@ -351,7 +352,6 @@ async def download_video(
         ext = file_path.suffix.lower() or (".mp3" if format_type == "audio" else ".mp4")
         client_filename = f"{clean_title}{ext}"
 
-        # Schedule automatic cleanup after response is delivered
         background_tasks.add_task(cleanup_file, file_path)
 
         media_type = "audio/mpeg" if ext == ".mp3" else "video/mp4"
@@ -369,7 +369,6 @@ async def download_video(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Download error: {str(e)}")
 
-# Mount frontend built distribution directory for production serving
 DIST_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 if DIST_DIR.exists():
     app.mount("/", StaticFiles(directory=str(DIST_DIR), html=True), name="static")

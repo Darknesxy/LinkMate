@@ -15,6 +15,10 @@ import AuthModal from './components/AuthModal';
 import DownloadsModal from './components/DownloadsModal';
 import { FaqModal, PricingModal, ToolsModal, BlogModal } from './components/InfoModals';
 
+const API_BASE = (typeof window !== 'undefined' && window.location.origin.includes('github.io'))
+  ? 'https://linkmate-od72.onrender.com'
+  : '';
+
 export default function App() {
   const [url, setUrl] = useState('');
   const [placeholderText, setPlaceholderText] = useState('Paste video link here (e.g. https://www.youtube.com/watch?v=...)');
@@ -111,7 +115,7 @@ export default function App() {
     showToast('Extracting real video stream & formats...', 'info');
 
     try {
-      const response = await fetch(`/api/info?url=${encodeURIComponent(finalUrl)}`);
+      const response = await fetch(`${API_BASE}/api/info?url=${encodeURIComponent(finalUrl)}`);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.detail || 'Could not fetch video info');
@@ -148,7 +152,7 @@ export default function App() {
     setDownloadingId(optId);
     showToast(`Downloading: ${option.format} (${option.quality}). Please wait...`, 'info');
 
-    const downloadEndpoint = `/api/download?url=${encodeURIComponent(videoData.webpage_url || url)}&format_id=${encodeURIComponent(optId)}&format_type=${option.type}&quality=${encodeURIComponent(selectedQuality)}&bitrate=${encodeURIComponent(bitrate)}`;
+    const downloadEndpoint = `${API_BASE}/api/download?url=${encodeURIComponent(videoData.webpage_url || url)}&format_id=${encodeURIComponent(optId)}&format_type=${option.type}&quality=${encodeURIComponent(selectedQuality)}&bitrate=${encodeURIComponent(bitrate)}`;
 
     // Add to download history
     const now = new Date();
