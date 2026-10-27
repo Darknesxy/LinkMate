@@ -150,7 +150,7 @@ export default function App() {
   const handleTriggerDownload = async (option) => {
     const optId = option.id || 'best';
     setDownloadingId(optId);
-    showToast(`Downloading: ${option.format} (${option.quality}). Please wait...`, 'info');
+    showToast(`Downloading: ${option.format} (${option.quality})...`, 'info');
 
     const downloadEndpoint = `${API_BASE}/api/download?url=${encodeURIComponent(videoData.webpage_url || url)}&format_id=${encodeURIComponent(optId)}&format_type=${option.type}&quality=${encodeURIComponent(selectedQuality)}&bitrate=${encodeURIComponent(bitrate)}`;
 
@@ -166,23 +166,10 @@ export default function App() {
     };
     setDownloadsList((prev) => [newDownload, ...prev]);
 
-    try {
-      const link = document.createElement('a');
-      link.href = downloadEndpoint;
-      link.setAttribute('download', '');
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      setTimeout(() => {
-        showToast('Download started! Check your browser downloads bar.', 'success');
-        setDownloadingId(null);
-      }, 2000);
-    } catch (err) {
-      console.error(err);
+    setTimeout(() => {
+      showToast('Download initiated! Check your browser downloads bar.', 'success');
       setDownloadingId(null);
-      showToast('Download initiated in background.', 'success');
-    }
+    }, 2500);
   };
 
   const handleMobileNavSelect = (tabId) => {
@@ -296,6 +283,9 @@ export default function App() {
             onTriggerDownload={handleTriggerDownload}
             downloadingId={downloadingId}
             onPreviewPlay={(video) => setPlayerVideo(video)}
+            apiBase={API_BASE}
+            selectedQuality={selectedQuality}
+            bitrate={bitrate}
           />
         </section>
 

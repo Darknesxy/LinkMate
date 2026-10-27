@@ -17,7 +17,10 @@ export default function PreviewCard({
   videoData, 
   onTriggerDownload, 
   downloadingId, 
-  onPreviewPlay 
+  onPreviewPlay,
+  apiBase = '',
+  selectedQuality = 'Auto',
+  bitrate = '320k'
 }) {
   if (!videoData) return null;
 
@@ -139,10 +142,13 @@ export default function PreviewCard({
 
           <div className="space-y-2.5">
             {videoData.options?.map((opt, idx) => {
-              const isDownloading = downloadingId === (opt.id || idx);
+              const optId = opt.id || 'best';
+              const isDownloading = downloadingId === optId;
+              const directDownloadUrl = `${apiBase}/api/download?url=${encodeURIComponent(videoData.webpage_url)}&format_id=${encodeURIComponent(optId)}&format_type=${opt.type}&quality=${encodeURIComponent(selectedQuality)}&bitrate=${encodeURIComponent(bitrate)}`;
+
               return (
                 <div
-                  key={opt.id || idx}
+                  key={optId || idx}
                   className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#090d19]/80 border border-slate-800 hover:border-slate-700 transition"
                 >
                   <div className="flex items-center gap-3.5">
@@ -166,16 +172,18 @@ export default function PreviewCard({
                     </div>
                   </div>
 
-                  {/* Download Action Button */}
-                  <button
+                  {/* Direct Native Download Anchor Button */}
+                  <a
+                    href={directDownloadUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     onClick={() => handleDownloadClick(opt)}
-                    disabled={isDownloading}
-                    className="px-6 py-2.5 rounded-xl font-semibold text-xs sm:text-sm text-white flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 shadow-md shadow-purple-600/25 hover:shadow-purple-500/40 transition active:scale-95 disabled:opacity-75 cursor-pointer shrink-0"
+                    className="px-6 py-2.5 rounded-xl font-semibold text-xs sm:text-sm text-white flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 shadow-md shadow-purple-600/25 hover:shadow-purple-500/40 transition active:scale-95 cursor-pointer shrink-0 text-center no-underline"
                   >
                     {isDownloading ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Downloading...</span>
+                        <span>Starting Download...</span>
                       </>
                     ) : (
                       <>
@@ -183,7 +191,7 @@ export default function PreviewCard({
                         <Download className="w-4 h-4" />
                       </>
                     )}
-                  </button>
+                  </a>
                 </div>
               );
             })}
